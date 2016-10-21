@@ -16,10 +16,10 @@ Status entry (via direct message):
 Example:
   Your group chat:
     <boss> @{name} start
-    <{name}> group standup started.
+    <{name}> Okay, group standup started.
  
   direct-message with me:
-    <{name}>  @{name} Standup started for group!
+    <{name}> Standup started for group.
     <you> d: finished documenting all the things
     <{name}> done: 1, blocked: 0, goals: 0
     <you> g: find more thing to document
@@ -48,14 +48,13 @@ Example:
 
     'sat_down': '{user.tag} sat down.',
 
-    'standup_started' : '{standup.channel.name} standup started.',
+    'standup_started' : 'Okay, {standup.channel.name} standup started.',
     'standup_ended' : '*{standup.channel.name} standup ended!',
     'standup_cancelled' : '{standup.channel.name} standup cancelled.',
     'standup_already' : '{standup.channel.name} standup already started.',
     'standup_for': '*Standup for {standup.channel.name}*',
 
-    'started' : """Standup started for {standup.channel.name}!
- 
+    'started' : """Standup started for {standup.channel.name}.
 Use `d: ...`, `b: ...`, `g: ...` to report tasks done, blockers, and goals.
 Type `end` when you're finished, or `help` if you need.
 """,
