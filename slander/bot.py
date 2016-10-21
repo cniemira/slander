@@ -54,7 +54,7 @@ class Updates(object):
 
 
     def __repr__(self):
-        return str('<{} done={} blocked={} goals={}>'.format(
+        return str('<{} n_done={} n_blocked={} n_goals={}>'.format(
             self.__class__.__name__,
             len(self.done), len(self.blocked), len(self.goals)))
 
@@ -120,7 +120,7 @@ class User(object):
 
 
     def __repr__(self):
-        return str('<{} id="{}" name="{}" channel="{}" c={}>'.format(
+        return str('<{} id="{}" name="{}" channel="{}" n_standups={}>'.format(
             self.__class__.__name__,
             self.id, self.name, self.dm_channel, len(self.standups)))
 
@@ -154,7 +154,13 @@ class StandupBot(object):
 
         self.last_ping = 0
         self.keepalive_timer = 3
-        log.info('Bot initialized')
+        log.debug('Initialized {}'.format(self))
+
+
+    def __repr__(self):
+        return str('<{} bot_name="{}" n_users={} n_channels={}>'.format(
+            self.__class__.__name__,
+            self.bot.name, len(self.users), len(self.channels)))
 
 
     def connect(self):
@@ -451,17 +457,17 @@ def main():
             dest='verbosity')
     log_group.add_argument('-q', '--quiet', action='count', default=0,
             dest='quiet')
-    parser.add_argument('config_file', action='store', type=open,
+    parser.add_argument('CONFIG_FILE', action='store', type=open,
             default=default_file)
     args = parser.parse_args()
 
     verbosity = min(2, args.verbosity)
     quiet = min(2, args.quiet)
-    log_level = 30 - (verbosity*10) + (quiet*10) # yeah, I know
-    logging.basicConfig(level=log_level)
+    log_level = 30 - (verbosity*10) + (quiet*10)
+    logging.basicConfig(level=log_level) # yeah, I know
 
     config = ConfigParser()
-    config.read_file(args.config_file)
+    config.read_file(args.CONFIG_FILE)
     bot = StandupBot(config)
 
     while True:
@@ -471,6 +477,7 @@ def main():
             sys.exit(0)
         except Exception as e:
             logging.exception('Bot failed')
+
     sys.exit(1)
 
 
