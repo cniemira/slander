@@ -1,2 +1,5 @@
 [slack]
 token = xoxo-abcdefghijk-123456789876543212345678
+
+[channel:general]
+ignore = john.doe, jane.doe
