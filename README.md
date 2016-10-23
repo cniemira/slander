@@ -12,6 +12,8 @@ Slander (yeah, I know, "libel" would have made more sense, but it was hard enoug
 
 It was written because I wanted to do standups in Slack, but I didn't like any of the existing options. Hosted tools exfiltrate data by design, and I don't trust 'em. The various self-hosted bots I found didn't behave the way I wanted them to, and required too much setup. Slander can be stood up on a server or cloud node with monitoring and a watchdog, or you can just run it from a workstation when you need to.
 
+Slander comes with no license. Do what you want with it. I want to give a shout out to [slackbot](https://github.com/steelethis/slackbot), the project I used as a starting point. I've rewritten the entire thing to the point where it's now an original work.
+
 #### It's Python, so install it with `pip`
 
     $ pip install slander
