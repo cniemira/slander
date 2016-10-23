@@ -16,6 +16,8 @@ log = logging.getLogger(__name__)
 
 
 class Standup(object):
+    """ Represents a standup in a channel.
+    """
     def __init__(self, channel):
         assert isinstance(channel, Channel)
         self.channel = channel
@@ -46,6 +48,8 @@ class Standup(object):
 
 
 class Updates(object):
+    """ Represents a user's status.
+    """
     def __init__(self):
         self.done = []
         self.blocked = []
@@ -89,6 +93,8 @@ class Updates(object):
 
 
 class Channel(object):
+    """ A Slack channel or private group.
+    """
     def __init__(self, channel_info, slack_client):
         self.slack_client = slack_client
         self.id = channel_info["id"]
@@ -107,7 +113,10 @@ class Channel(object):
         self.slack_client.rtm_send_message(self.id, message)
 
 
+
 class User(object):
+    """ A Slack user. Some overlap with what's buried in slackclient.
+    """
     def __init__(self, user_info, slack_client):
         self.slack_client = slack_client
         self.id = user_info["id"]
@@ -140,6 +149,9 @@ class User(object):
 
 
 class StandupBot(object):
+    """ Represents the bot itself. Contains all user objects, channels,
+        and standups.
+    """
     def __init__(self, config):
         assert isinstance(config, ConfigParser)
         self.config = config
@@ -203,6 +215,7 @@ class StandupBot(object):
     def start(self):
         self.connect()
 
+        # main loop
         while True:
             self.keepalive()
             messages = self.slack_client.rtm_read()
@@ -221,6 +234,8 @@ class StandupBot(object):
 
 
     def handle_message(self, channel_name, message):
+        # this is hideous and should probably be rewritten, but
+        # I'm lazy and it works
         if not type(message) is str and len(message) > 1:
             log.info('Bad message in {}'.format(channel_name))
             return
@@ -230,7 +245,8 @@ class StandupBot(object):
         direct = True if channel_name[0] == 'D' else False
         mention = False
 
-        # pay attention to '@bot COMMAND' messages
+        # pay attention to '@bot COMMAND' messages, but ignore other
+        # mentions, cc's, etc...
         if cmd == self.mention_prefix:
             mention = True
             cmd, msg = self.parse_cmd(msg)
@@ -247,9 +263,8 @@ class StandupBot(object):
                 return
 
         if direct and active:
-            # This is a user interacting with the bot directly.
-            # Usually, this will be someone entering or editing
-            # their status
+            # someone is interacting with the bot directly
+            # usually it's someone entering or editing their status
             user = self.channels[channel_name]
             standup = user.standups[0]
 
@@ -371,9 +386,11 @@ class StandupBot(object):
                         standup.add_user(user)
 
                     if standup.outstanding > 0:
-                        standup.channel.send_message(_('standup_started', standup=standup))
+                        standup.channel.send_message(
+                            _('standup_started', standup=standup))
                     else:
-                        standup.channel.send_message(_('standup_empty', standup=standup))
+                        standup.channel.send_message(
+                            _('standup_empty', standup=standup))
                         log.error('Standup is empty!')
                         self.unlink(standup)
 
@@ -385,11 +402,13 @@ class StandupBot(object):
                 standup = self.channels[channel_name]
 
                 if cmd in commands['start']:
-                    standup.channel.send_message(_('standup_already', standup=standup))
+                    standup.channel.send_message(
+                            _('standup_already', standup=standup))
 
                 elif cmd in commands['cancel']:
                     log.info('Cancelling standup in {}'.format(channel_name))
-                    standup.channel.send_message(_('standup_cancelled', standup=standup))
+                    standup.channel.send_message(
+                            _('standup_cancelled', standup=standup))
                     self.unlink(standup)
 
                 elif cmd in commands['publish']:
@@ -450,7 +469,8 @@ def main():
     here = os.path.dirname(__file__)
     default_file = os.path.abspath("{}/{}".format(here, 'conf.ini'))
 
-    parser = argparse.ArgumentParser(description='SLack Agile Not Dangerously Evil Robot')
+    parser = argparse.ArgumentParser(
+            description='SLack Agile Not Dangerously Evil Robot')
 
     log_group = parser.add_mutually_exclusive_group()
     log_group.add_argument('-v', '--verbose', action='count', default=0,
