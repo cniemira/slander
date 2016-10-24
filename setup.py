@@ -4,7 +4,14 @@ import sys
 from setuptools import setup, find_packages
 
 here = os.path.abspath(os.path.dirname(__file__))
-README = open(os.path.join(here, 'README.md')).read()
+README = """SLack Agile Not Dangerously Evil Robot
+
+What makes it "not dangerously evil?"
+
+* No database
+* No data sharing
+* NLP-esque (no funky command syntax)
+"""
 
 requires = [
     'slackclient',
@@ -20,7 +27,7 @@ setup(name='slander',
       classifiers=[
           "Programming Language :: Python",
       ],
-      url='https://github.com/siege/slander',
+      url='https://github.com/cniemira/slander',
       keywords='agile chat slack standup',
       packages=find_packages(),
       include_package_data=True,
