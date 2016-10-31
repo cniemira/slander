@@ -59,6 +59,8 @@ Use `d: ...`, `b: ...`, `g: ...` to report tasks done, blockers, and goals.
 Type `end` when you're finished, or `help` if you need.
 """,
 
+    'status_response': '{status}; channel:{standup.channel.name}, done:{n_done}, blocked:{n_blocked}, goals:{n_goals}',
+
     'unknown_cmd' : 'Bad command. Try `help` if you need it.',
 
     'Done': 'Done',
@@ -72,18 +74,19 @@ Type `end` when you're finished, or `help` if you need.
 
 
 commands = {
-    'blocked': ('b:', 'blocked', 'block', 'stuck'),
-    'cancel': ('cancel'),
-    'done': ('d:', 'did', 'finished', 'completed'),
-    'end': ('end'),
-    'help': ('help'),
-    'goals': ('g:', 'goal', 'will', 'shall'),
-    'reset': ('reset'),
+    'blocked': ('b', 'b:', 'blocked', 'block', 'stuck'),
+    'cancel': ('cancel',),
+    'done': ('d', 'd:', 'did', 'finished', 'completed'),
+    'echo': ('echo',),
+    'end': ('end',),
+    'help': ('help',),
+    'goals': ('g', 'g:', 'goal', 'will', 'shall'),
+    'reset': ('reset',),
     'skip': ('skip', 'no'),
     'show': ('show', 'what'),
     'start': ('start', 'begin'),
-    'ping': ('ping'),
-    'publish': ('publish'),
+    'ping': ('ping',),
+    'publish': ('publish',),
     }
 
 
