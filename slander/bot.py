@@ -8,6 +8,7 @@ from textwrap import TextWrapper
 
 from slackclient import SlackClient
 from terminaltables import AsciiTable
+from websocket import WebSocketConnectionClosedException
 
 from .lang import commands, _
 
@@ -37,14 +38,14 @@ class Standup(object):
     def add_user(self, user):
         assert isinstance(user, User)
         self.users.append(user)
-        self.updates.update({user.tag: Updates()})
+        self.updates.update({user.name: Updates()})
         self.outstanding += 1
 
 
     def publish(self):
         log.info('publish; channel:"{}"'.format(self.channel.name))
         res = [_('standup_for', standup=self)]
-        [res.append(ups.display(tag)) for tag, ups in self.updates.items()]
+        [res.append(ups.display(name)) for name, ups in self.updates.items()]
         self.channel.send_message('\n \n'.join(res))
 
 
@@ -65,16 +66,16 @@ class Updates(object):
             len(self.done), len(self.blocked), len(self.goals)))
 
 
-    def display(self, tag):
+    def display(self, name):
         i = len(self.done) + len(self.blocked) + len(self.goals)
-        return self._as_none(tag) if i < 1 else self._as_table(tag)
+        return self._as_none(name) if i < 1 else self._as_table(name)
 
 
-    def _as_none(self, tag):
-        return tag + ': ' + _('None')
+    def _as_none(self, name):
+        return name + ': ' + _('None')
 
 
-    def _as_table(self, tag):
+    def _as_table(self, name):
         w = TextWrapper(width=68, initial_indent='* ',
                 subsequent_indent='  ')
 
@@ -86,11 +87,11 @@ class Updates(object):
         if len(self.goals):
             d.append((_('Goals'), '\n'.join([w.fill(i) for i in self.goals])))
 
-        t = AsciiTable(d)
+        t = AsciiTable(d, title=name)
         t.inner_row_border = True
-        t.outer_border = False
+        t.outer_border = True
         t.justify_columns = {0: 'right', 1: 'left'}
-        return tag + ':```\n' + t.table + '```'
+        return '```{}```'.format(t.table)
 
 
 
@@ -123,7 +124,6 @@ class User(object):
         self.slack_client = slack_client
         self.id = user_info["id"]
         self.name = user_info["name"]
-        self.tag = '<@{}>'.format(self.id)
         self.connected = False
         self.dm_channel = None
         self.standups = []
@@ -137,6 +137,8 @@ class User(object):
 
 
     def connect(self):
+        if self.connected:
+            return
         res = self.slack_client.api_call('im.open', user=self.id)
         self.connected = True
         self.dm_channel = res['channel']['id']
@@ -166,8 +168,20 @@ class StandupBot(object):
         self.slack_client = None
         self.mention_prefix = None
 
+        self.connect_count = 0
+        self.error_count = 0
+        self.initialized_at = float(time.time())
+        self.last_connected = 0
         self.last_ping = 0
-        self.keepalive_timer = 3
+        self.last_pong = 0
+
+        self.keepalive_time = float(self.config.get('bot', 'keepalive_time'))
+        self.max_cmd_age = float(self.config.get('bot', 'max_cmd_age'))
+        self.max_errors = int(self.config.get('bot', 'max_errors'))
+        self.sleep_before_reconnect = float(self.config.get('bot',
+                                            'sleep_before_reconnect'))
+        self.sleep_in_mainloop = float(self.config.get('bot',
+                                       'sleep_in_mainloop'))
         log.debug('initialized:"{}"'.format(self))
 
 
@@ -188,6 +202,16 @@ class StandupBot(object):
             )
         self.mention_prefix = '<@{}>'.format(self.bot.id)
         log.info('connected; name:"{}", prefix:"{}"'.format(self.bot.name, self.mention_prefix))
+        self.connect_count += 1
+        self.last_connected = float(time.time())
+
+
+    def force_reconnect(self):
+        self.slack_client = None
+        self.error_count += 1
+        log.debug('pause {)s, then reconnect'.format(
+                    self.sleep_before_reconnect))
+        time.sleep(self.sleep_before_reconnect)
 
 
     def get_channel(self, channel_name):
@@ -205,29 +229,47 @@ class StandupBot(object):
 
     def get_user(self, user_name):
         user_object = self.slack_client.api_call('users.info', user=user_name)
-        if not user_object['user']['is_bot']:
-            return User(user_object['user'], self.slack_client)
+        if user_object['user']['is_bot']:
+            return None
+        return User(user_object['user'], self.slack_client)
 
 
     def keepalive(self):
-        now = int(time.time())
-        if now > self.last_ping + self.keepalive_timer:
+        now = float(time.time())
+        if now > self.last_ping + self.keepalive_time:
             self.slack_client.server.ping()
             self.last_ping = now
 
 
     def start(self):
-        self.connect()
-
         # main loop
         while True:
-            self.keepalive()
-            messages = self.slack_client.rtm_read()
-            if len(messages):
-                for response in messages:
-                    self.handle_response(response)
-            else:
-                time.sleep(0.1)
+            try:
+                if self.error_count > self.max_errors:
+                    raise UserWarning('Too many errors')
+
+                if self.slack_client is None:
+                    self.connect()
+                self.keepalive()
+                messages = self.slack_client.rtm_read()
+                if len(messages):
+                    for response in messages:
+                        self.handle_response(response)
+                else:
+                    time.sleep(self.sleep_in_mainloop)
+                self.error_count = 0
+
+            except ConnectionResetError as e:
+                log.error(e)
+                self.force_reconnect()
+
+            except TimeoutError as e:
+                log.error(e)
+                self.force_reconnect()
+
+            except WebSocketConnectionClosedException as e:
+                log.error(e)
+                self.error_count += 1
 
 
     def parse_cmd(self, text):
@@ -250,8 +292,7 @@ class StandupBot(object):
         return text
 
 
-
-    def handle_message(self, channel_name, message):
+    def handle_message(self, channel_name, message, author):
         # this is hideous and should probably be rewritten, but
         # I'm lazy and it works
         if not type(message) is str and len(message) > 1:
@@ -259,7 +300,6 @@ class StandupBot(object):
             return
 
         cmd, msg = self.parse_cmd(message)
-        log.debug('parsed; cmd:"{}", msg:"{}"'.format(cmd, msg))
         active = True if channel_name in self.channels else False
         direct = True if channel_name[0] == 'D' else False
         mention = False
@@ -269,6 +309,9 @@ class StandupBot(object):
         if cmd == self.mention_prefix:
             mention = True
             cmd, msg = self.parse_cmd(msg)
+
+        log.debug('parsed; a:{}, d:{}, m:{}, cmd:"{}", msg:"{}"'.format(
+            active, direct, mention, cmd, msg))
 
         # simple query/response commands
         if direct or mention:
@@ -286,6 +329,12 @@ class StandupBot(object):
                 self.slack_client.rtm_send_message(channel_name, _('pong'))
                 return
 
+            elif cmd in commands['uptime']:
+                self.slack_client.rtm_send_message(channel_name,
+                        _('uptime', bot=self, now=float(time.time()))
+                        )
+                return
+
         if direct and active:
             # someone is interacting with the bot directly
             # usually it's someone entering or editing their status
@@ -293,7 +342,7 @@ class StandupBot(object):
             standup = user.standups[0]
 
             end = False
-            ups = standup.updates[user.tag]
+            ups = standup.updates[user.name]
             done = ups.done
             blocked = ups.blocked
             goals = ups.goals
@@ -326,7 +375,8 @@ class StandupBot(object):
                 stat = _('reset_what')
 
             elif cmd in commands['show']:
-                user.send_message(_('preview', update=ups.display(user.tag)))
+                user.send_message(_('preview',
+                    update=ups.display(user.name)))
 
             elif cmd in commands['skip']:
                 done = []
@@ -366,51 +416,22 @@ class StandupBot(object):
 
         elif mention:
             if not active:
-                if cmd in commands['start']:
+                if cmd in commands['join']:
+                    log.info('append; channel:"{}"'.format(channel_name))
+                    standup = self.create_standup(channel_name)
+                    added = self.connect_users(standup, only=[author])
+                    if added != 1:
+                        self.slack_client.rtm_send_message(channel_name,
+                            _('cmd_error'))
+                        log.error('join error; standup:"{}"'.format(
+                            standup
+                            ))
+
+                elif cmd in commands['start']:
                     log.info('begin; channel:"{}"'.format(channel_name))
-                    channel = self.get_channel(channel_name)
-
-                    section = 'channel:{}'.format(channel.name)
-                    ignore_users = []
-                    if self.config.has_section(section):
-                        if self.config.has_option(section, 'ignore'):
-                            ignore_str = self.config.get(section, 'ignore')
-                            ignore_users = [u.strip() for u in
-                                    ignore_str.split(',')]
-                            log.debug('ignore:"{}"'.format(ignore_users))
-
-                    standup = Standup(channel)
-                    self.channels.update({channel_name: standup})
-                    for uid in standup.channel.members:
-                        if uid in self.users:
-                            user = self.users[uid]
-
-                        else:
-                            user = self.get_user(uid)
-                            if not user:
-                                continue
-
-                        if user.name in ignore_users:
-                            log.info('pass; user:"{}", channel:"{}"'.format(
-                                user.name, standup.channel.name))
-                            continue
-
-                        if not user.connected:
-                            user.connect()
-
-                        if len(user.standups) < 1:
-                            user.send_message(_('started', standup=standup))
-
-                        if not user.dm_channel in self.channels:
-                            self.channels.update({user.dm_channel: user})
-
-                        if not uid in self.users:
-                            self.users.update({uid: user})
-
-                        user.standups.append(standup)
-                        standup.add_user(user)
-
-                    if standup.outstanding > 0:
+                    standup = self.create_standup(channel_name)
+                    added = self.connect_users(standup)
+                    if added > 0:
                         standup.channel.send_message(
                             _('standup_started', standup=standup))
                     else:
@@ -421,12 +442,29 @@ class StandupBot(object):
 
                 else:
                     log.debug('unknown cmd; state="inactive", cmd:"{}"'.format(cmd))
+                    self.slack_client.rtm_send_message(channel_name,
+                            _('unknown_cmd'))
 
             else:
                 # In a channel with an active standup
                 standup = self.channels[channel_name]
 
-                if cmd in commands['start']:
+                if cmd in commands['join']:
+                    added = self.connect_users(standup, only=[author])
+                    if added == 1:
+                        # break
+                        user = self.users[author]
+                        user.send_message(
+                            _('rejoined', standup=standup)
+                            )
+                    else:
+                        self.slack_client.rtm_send_message(channel_name,
+                            _('cmd_error'))
+                        log.error('rejoin error; standup:"{}"'.format(
+                            standup
+                            ))
+
+                elif cmd in commands['start']:
                     standup.channel.send_message(
                             _('standup_already', standup=standup))
 
@@ -441,24 +479,93 @@ class StandupBot(object):
                     self.unlink(standup)
 
                 else:
-                    standup.channel.send_message(_('unknown_cmd'))
                     log.debug('unknown cmd; state="active", cmd:"{}"'.format(cmd))
+                    standup.channel.send_message(_('unknown_cmd'))
 
 
     def handle_response(self, response):
-        if "type" in response and "subtype" not in response:
-            if "message" in response["type"]:
+        if 'type' in response and 'subtype' not in response:
+            if 'pong' in response['type']:
+                self.last_pong = float(time.time())
+
+            if 'message' in response['type']:
+                if 'reply_to' in response:
+                    log.warn('skip reply; res:"{}"'.format(str(response)))
+                    return
+
                 try:
                     age = time.time() - float(response["ts"])
-                    if age > 30.0:
+                    if age > self.max_cmd_age:
                         log.warn('too old; age:"{}", res:"{}"'.format(
                             age, str(response)))
                         return
 
                     log.debug('handling; res:"{}"'.format(response))
-                    self.handle_message(response["channel"], response["text"])
+                    self.handle_message(response["channel"],
+                            response["text"], response["user"])
                 except Exception as e:
                     logging.exception('handling failure')
+
+
+    def create_standup(self, channel_name):
+        channel = self.get_channel(channel_name)
+        standup = Standup(channel)
+        self.channels.update({channel_name: standup})
+        return standup
+
+
+    def connect_users(self, standup, only=None):
+        ignore_users = []
+        initial_count = standup.outstanding
+
+        if only:
+            include = only
+        else:
+            include = standup.channel.members
+            section = 'channel:{}'.format(standup.channel.name)
+            if self.config.has_section(section):
+                if self.config.has_option(section, 'ignore'):
+                    ignore_str = self.config.get(section, 'ignore')
+                    ignore_users = [u.strip() for u in ignore_str.split(',')]
+
+        users = []
+        for uid in include:
+            if uid in self.users:
+                user = self.users[uid]
+
+            else:
+                user = self.get_user(uid)
+                if not user:
+                    continue
+
+            if user.name not in ignore_users:
+                users.append(user)
+
+            else:
+                log.info('ignore; user:"{}", channel:"{}"'.format(
+                    user.name, standup.channel.name))
+
+        for user in users:
+            user.connect()
+
+            if len(user.standups) < 1:
+                user.send_message(_('started', standup=standup))
+
+            elif standup in user.standups:
+                standup.channel.send_message(
+                    _('standup_contains', standup=standup, user=user))
+                continue
+
+            if not user.dm_channel in self.channels:
+                self.channels.update({user.dm_channel: user})
+
+            if not user.id in self.users:
+                self.users.update({user.id: user})
+
+            user.standups.append(standup)
+            standup.add_user(user)
+
+        return standup.outstanding - initial_count
 
 
     def sit_down(self, user, standup):
@@ -470,11 +577,13 @@ class StandupBot(object):
             if len(user.standups) < 1:
                 log.debug('done; user:"{}"'.format(user.name))
                 self.channels.pop(user.dm_channel)
+                log.debug(self.users)
                 self.users.pop(user.id)
 
             else:
-                log.debug('next standup; user:"{}"'.format(user.name))
                 next_standup = user.standups[0]
+                log.debug('next standup; user:"{}", standup:"{}"'.format(
+                    user.name, next_standup))
                 user.send_message(_('next', standup=next_standup))
 
 
@@ -484,6 +593,7 @@ class StandupBot(object):
             if user.dm_channel in self.channels:
                 user.send_message(_('standup_ended', standup=standup))
             self.sit_down(user, standup)
+        log.debug(self.channels)
         self.channels.pop(standup.channel.id)
 
 
@@ -506,7 +616,11 @@ def main():
             dest='quiet')
     parser.add_argument('CONFIG_FILE', action='store', type=open,
             default=default_file)
-    args = parser.parse_args()
+    try:
+        args = parser.parse_args()
+    except Exception as e:
+        print(e)
+        sys.exit(1)
 
     verbosity = min(2, args.verbosity)
     quiet = min(2, args.quiet)
@@ -514,17 +628,21 @@ def main():
     logging.basicConfig(level=log_level, format=log_form) # yeah, I know
 
     config = ConfigParser()
-    config['DEFAULT'] = DEFAULT_CONFIG
+    config['DEFAULT'] = DEFAULT_CONFIG['global']
+    config['bot'] = DEFAULT_CONFIG['bot']
+    config['slack'] = DEFAULT_CONFIG['slack']
     config.read_file(args.CONFIG_FILE)
     bot = StandupBot(config)
 
+    slumber = config.get('bot', 'sleep_before_recycle')
     while True:
         try:
             bot.start()
         except KeyboardInterrupt:
             sys.exit(0)
         except Exception as e:
-            logging.exception('bot failed')
+            logging.exception('bot failed; restart in {}s'.format(slumber))
+        time.sleep(float(slumber))
 
     sys.exit(1)
 

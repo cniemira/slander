@@ -1,5 +1,6 @@
 messages = {
-    'help' : """Standup management (from a channel or pvt group):
+    'help' : """\
+Standup management (from a channel or pvt group):
   `@{name} start`       Start a standup. I will message everyone in the channel
   `@{name} cancel`      Cancel a standup that has been started
   `@{name} publish`     Publish a standup that has been started
@@ -33,28 +34,35 @@ Example:
     <{name}> ...
 """,
 
+    'cmd_error' : 'Uh oh. I wasn\'t able do to that.',
+
     'next' : 'Another standup, for {standup.channel.name}, also started.',
 
     'no_standup' : 'No active standup.',
 
     'pong' : 'pong',
 
-    'preview': """Preview:
-  
+    'preview': """\
+Preview:
 {update}
 """,
 
     'reset_what': 'Reset what?',
 
-    'sat_down': '{user.tag} sat down.',
+    'sat_down': '{user.name} sat down.',
 
-    'standup_started' : 'Okay, {standup.channel.name} standup started.',
-    'standup_ended' : '*{standup.channel.name} standup ended!',
-    'standup_cancelled' : '{standup.channel.name} standup cancelled.',
     'standup_already' : '{standup.channel.name} standup already started.',
+    'standup_cancelled' : '{standup.channel.name} standup cancelled.',
+    'standup_contains' : '{user.name} is already in {standup.channel.name}',
+    'standup_ended' : '{standup.channel.name} standup ended!',
+    'standup_empty' : '{standup.channel.name} has no un-ignored members.',
     'standup_for': '*Standup for {standup.channel.name}*',
+    'standup_started' : 'Okay, {standup.channel.name} standup started.',
 
-    'started' : """Standup started for {standup.channel.name}.
+    'rejoined' : 'Your previous staus has been clobbered.',
+
+    'started' : """\
+Standup started for {standup.channel.name}.
 Use `d: ...`, `b: ...`, `g: ...` to report tasks done, blockers, and goals.
 Type `end` when you're finished, or `help` if you need.
 """,
@@ -62,6 +70,19 @@ Type `end` when you're finished, or `help` if you need.
     'status_response': '{status}; channel:{standup.channel.name}, done:{n_done}, blocked:{n_blocked}, goals:{n_goals}',
 
     'unknown_cmd' : 'Bad command. Try `help` if you need it.',
+
+    'uptime' : """\
+Details for {bot.bot.name}:
+  
+current time: {now}
+started at: {bot.initialized_at}
+last connect: {bot.last_connected}
+last ping: {bot.last_ping}
+last pong: {bot.last_pong}
+  
+current error counter: {bot.error_count}
+total connections: {bot.connect_count}
+""",
 
     'Done': 'Done',
     'Blocked': 'Blocked',
@@ -79,14 +100,16 @@ commands = {
     'done': ('d', 'd:', 'did', 'finished', 'completed'),
     'echo': ('echo',),
     'end': ('end',),
-    'help': ('help',),
     'goals': ('g', 'g:', 'goal', 'will', 'shall'),
+    'help': ('help',),
+    'join': ('join', 'add'),
     'reset': ('reset',),
     'skip': ('skip', 'no'),
     'show': ('show', 'what'),
     'start': ('start', 'begin'),
     'ping': ('ping',),
     'publish': ('publish',),
+    'uptime': ('uptime',),
     }
 
 
